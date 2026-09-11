@@ -1,12 +1,28 @@
 # HYDCD → Yomitan
 
-Private converter for the 漢語大詞典 七訂 source dictionary, including normalized
+Converter for the 漢語大詞典 七訂 source dictionary, including normalized
 pinyin readings for matching and tone coloring in Yomitan/Lapis.
+
+## Download and updates
+
+- [Latest dictionary ZIP](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan.zip)
+- [Latest release](https://github.com/caocaochan/hydcd-yomitan/releases/latest)
+- [Yomitan update index](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index.json)
+
+These links follow the latest published dictionary release. Each ZIP embeds
+`isUpdatable`, `indexUrl`, and `downloadUrl`, and the release attaches the exact
+`index.json` from that ZIP. In Yomitan's dictionary settings, check for updates
+and apply the available update. An older installation without update metadata
+must be replaced manually once with an update-enabled ZIP.
+
+CI revisions use `2025.12.13.<workflow run number>.<attempt>` so Yomitan's numeric
+revision comparison detects new builds and reruns even if the converter version
+has not changed. The converter version and source commit remain in the reports.
 
 ## Automatic builds
 
 Every push to any branch runs the **Build dictionary** GitHub Actions workflow.
-It tests the converter, downloads the fixed source inputs from this private
+It tests the converter, downloads the fixed source inputs from this
 repository's `source-qiding-2025.12.13` release, verifies their SHA-256 checksums,
 builds the dictionary, and runs archive-wide validation. The workflow can also
 be started manually from the Actions tab.
@@ -54,11 +70,11 @@ and the optional targeted/exhaustive schema-validation modes.
 
 ## Source inputs
 
-The MDX, MDD, and source CSS are private release assets rather than Git blobs.
+The MDX, MDD, and source CSS are release assets rather than Git blobs.
 Their names, sizes, and checksums are recorded in
 [the source manifest](.github/source-inputs.json). The release is fixed to one
 source edition; replacing inputs requires a new release and manifest update.
 
 Source dictionaries, generated ZIPs, local environments, and reference checkouts
-are excluded from Git. Keep this repository private; the converter does not
+are excluded from Git. The converter does not
 grant redistribution rights to the dictionary data.

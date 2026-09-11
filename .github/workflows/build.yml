@@ -44,6 +44,8 @@ jobs:
       - name: Build dictionary
         timeout-minutes: 15
         working-directory: work/hydcd-yomitan
+        env:
+          HYDCD_RELEASE_REVISION: 2025.12.13.${{ github.run_number }}.${{ github.run_attempt }}
         run: python -m hydcd_yomitan build --input ../input/hydcd-seven --output ../../outputs/hydcd-qiding-yomitan.zip
 
       - name: Validate every bank without recursive term-schema validation
@@ -51,13 +53,15 @@ jobs:
         working-directory: work/hydcd-yomitan
         run: python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan.zip --archive-only --report ../../outputs/validation-report.txt
 
-      - name: Record build provenance and checksum
+      - name: Extract update index and record build provenance and checksum
         run: |
           python - <<'PY'
-          import hashlib, json, os
+          import hashlib, json, os, zipfile
           from pathlib import Path
           output = Path('outputs')
           path = output / 'hydcd-qiding-yomitan.zip'
+          with zipfile.ZipFile(path) as archive:
+              (output / 'index.json').write_bytes(archive.read('index.json'))
           with path.open('rb') as stream:
               digest = hashlib.file_digest(stream, 'sha256').hexdigest()
           (output / 'SHA256SUMS').write_text(f'{digest}  {path.name}\n', encoding='utf-8')
@@ -72,6 +76,7 @@ jobs:
           name: hydcd-yomitan-${{ github.sha }}
           path: |
             outputs/hydcd-qiding-yomitan.zip
+            outputs/index.json
             outputs/hydcd-qiding-conversion-report.json
             outputs/validation-report.txt
             outputs/build-info.json
@@ -115,10 +120,12 @@ jobs:
           EOF
           gh release create "$tag" \
             outputs/hydcd-qiding-yomitan.zip \
+            outputs/index.json \
             outputs/hydcd-qiding-conversion-report.json \
             outputs/validation-report.txt \
             outputs/build-info.json \
             outputs/SHA256SUMS \
             --target "$GITHUB_SHA" \
+            --latest \
             --title "HYDCD Qiding build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
             --notes-file release-notes.md

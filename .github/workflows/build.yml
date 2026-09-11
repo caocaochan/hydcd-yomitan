@@ -1,0 +1,81 @@
+name: Build dictionary
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - name: Check out converter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: work/hydcd-yomitan/requirements-lock.txt
+
+      - name: Install locked dependencies
+        run: python -m pip install -r work/hydcd-yomitan/requirements-lock.txt
+
+      - name: Test converter
+        timeout-minutes: 5
+        working-directory: work/hydcd-yomitan
+        run: python -m pytest
+
+      - name: Download and verify private source inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/fetch_inputs.py
+
+      - name: Build dictionary
+        timeout-minutes: 15
+        working-directory: work/hydcd-yomitan
+        run: python -m hydcd_yomitan build --input ../input/hydcd-seven --output ../../outputs/hydcd-qiding-yomitan.zip
+
+      - name: Validate every bank without recursive term-schema validation
+        timeout-minutes: 10
+        working-directory: work/hydcd-yomitan
+        run: python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan.zip --archive-only --report ../../outputs/validation-report.txt
+
+      - name: Record build provenance and checksum
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          output = Path('outputs')
+          path = output / 'hydcd-qiding-yomitan.zip'
+          with path.open('rb') as stream:
+              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+          (output / 'SHA256SUMS').write_text(f'{digest}  {path.name}\n', encoding='utf-8')
+          info = {key: os.environ[key] for key in ('GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
+          info['validation_mode'] = 'archive-only'
+          (output / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Upload dictionary and reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hydcd-yomitan-${{ github.sha }}
+          path: |
+            outputs/hydcd-qiding-yomitan.zip
+            outputs/hydcd-qiding-conversion-report.json
+            outputs/validation-report.txt
+            outputs/build-info.json
+            outputs/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

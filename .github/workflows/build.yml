@@ -79,3 +79,46 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated dictionary and reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: hydcd-yomitan-${{ github.sha }}
+          path: outputs
+
+      - name: Verify dictionary checksum
+        working-directory: outputs
+        run: sha256sum --check SHA256SUMS
+
+      - name: Publish dictionary release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cat > release-notes.md <<EOF
+          Built from commit ${GITHUB_SHA}.
+
+          Download hydcd-qiding-yomitan.zip and import it into Yomitan/Lapis.
+          Conversion and validation reports, build provenance, and SHA256SUMS are attached.
+          Validation covers every archive bank; recursive term-schema validation is skipped.
+
+          Build: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          gh release create "$tag" \
+            outputs/hydcd-qiding-yomitan.zip \
+            outputs/hydcd-qiding-conversion-report.json \
+            outputs/validation-report.txt \
+            outputs/build-info.json \
+            outputs/SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "HYDCD Qiding build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --notes-file release-notes.md

@@ -11,21 +11,30 @@ repository's `source-qiding-2025.12.13` release, verifies their SHA-256 checksum
 builds the dictionary, and runs archive-wide validation. The workflow can also
 be started manually from the Actions tab.
 
-Download `hydcd-yomitan-<commit SHA>` from the successful run's **Artifacts**
-section. It contains `hydcd-qiding-yomitan.zip` for Yomitan, conversion and
-validation reports, the source commit, and a checksum file. Artifacts are kept
-for seven days; rerun a workflow to rebuild an older commit. A push containing
-multiple commits builds the pushed branch tip.
+Successful builds on `main` also publish a **GitHub Release** with
+`hydcd-qiding-yomitan.zip` for Yomitan, conversion and validation reports, the
+source commit, and a checksum file. Releases use the tag
+`build-<run ID>-<attempt>` and point to the exact commit that was built. Manual
+runs on `main` publish releases too; reruns create a new release without
+overwriting an earlier build. Release assets do not have the seven-day
+retention limit of Actions artifacts.
+
+Every branch also uploads `hydcd-yomitan-<commit SHA>` to the successful run's
+**Artifacts** section, retained for seven days. Other branches do not publish
+releases. A push containing multiple commits builds the pushed branch tip.
 
 CI uses `--archive-only` validation: all banks are checked for safety, resource
 references, language structure, and normalized pinyin; the index schema is also
 validated. Recursive term-schema validation is explicitly skipped. Tests still
 exercise term-schema validation on small fixtures. Validation failures or
-timeouts fail the build and prevent dictionary artifact publication.
+timeouts fail the build and prevent dictionary artifact and release publication.
 
 The workflow uses Python 3.12 on Ubuntu 24.04, pinned GitHub Actions, and the
 existing Python dependency lock file. It needs only the built-in `GITHUB_TOKEN`
-with `contents: read`; no personal access token or repository secrets are needed.
+with `contents: read` for the build and `contents: write` for the separate release
+job; no personal access token or repository secrets are needed. The release job
+downloads the validated build artifact and verifies the ZIP checksum before
+publishing.
 
 ## Local build
 

@@ -85,6 +85,21 @@ def test_nested_senses_links_security_and_pinyin():
     assert not stats.unknown_tags
 
 
+def test_literal_corner_brackets_inside_quote_are_stripped():
+    raw = '''<hdcs class="fw"><hdc><hm><div class="hw">俢</div><pron>xiū</pron></hm>
+    <item><mean><a href="entry://修"><quote>「修」</quote></a>的古字。</mean>
+    <examples><example><quote>「甲<u>乙</u>丙」</quote></example>
+    <example><quote>无期度。</quote></example></examples></item></hdc></hdcs>'''
+    stats = ConversionStats()
+    result = parse_record("俢", raw, None, stats)
+    quotes = [node["content"] for node in nodes_with_kind(result[0].glossary[0]["content"], "quote")]
+    assert quotes[0] == ["修"]
+    assert quotes[1][0] == "甲" and quotes[1][-1] == "丙"
+    assert quotes[2] == ["无期度。"]
+    assert "「" not in flatten(result[0].glossary)
+    assert stats.counters["quote_literal_brackets_stripped"] == 2
+
+
 def test_generic_record_has_one_zh_hans_language_boundary():
     result = parse_record("通用", "<div>通用释义。</div>", None, ConversionStats())
     root = result[0].glossary[0]["content"]

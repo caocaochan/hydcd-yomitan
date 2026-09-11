@@ -81,6 +81,33 @@ def _content(el: etree._Element, converter: "StructuredConverter") -> list[Any]:
     return result
 
 
+def _strip_literal_corner_brackets(content: list[Any]) -> bool:
+    """Remove a literal 「…」 pair wrapping quote content.
+
+    The source stylesheet draws corner brackets around every ``<quote>`` except in
+    ``<hdcs class="fw">`` records, which carry the brackets as literal text. The
+    packaged stylesheet applies brackets to every quote, so literal ones are
+    dropped here to avoid rendering them twice.
+    """
+    if not content or not isinstance(content[0], str) or not isinstance(content[-1], str):
+        return False
+    first, last = content[0], content[-1]
+    if len(content) == 1:
+        if not (len(first) >= 2 and first.startswith("「") and first.endswith("」")):
+            return False
+        content[0] = first[1:-1]
+    else:
+        if not (first.startswith("「") and last.endswith("」")):
+            return False
+        content[0] = first[1:]
+        content[-1] = last[:-1]
+    if content and content[-1] == "":
+        content.pop()
+    if content and content[0] == "":
+        content.pop(0)
+    return True
+
+
 def _container(tag: str, content: Any, kind: str | None = None, **extra: Any) -> dict[str, Any]:
     node: dict[str, Any] = {"tag": tag}
     if content not in (None, [], ""):
@@ -163,6 +190,8 @@ class StructuredConverter:
                 return {"tag": "a", "href": f"?query={urlquote(target)}", "content": content}
             return content
         if tag == "quote":
+            if _strip_literal_corner_brackets(content):
+                self.stats.counters["quote_literal_brackets_stripped"] += 1
             return _container("span", content, "quote")
         if tag in {"xh", "defnum", "sensenum"}:
             return _container("span", content, "sense-number")

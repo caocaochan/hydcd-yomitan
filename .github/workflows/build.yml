@@ -109,6 +109,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          revision="$(python -c 'import json; from pathlib import Path; print(json.loads(Path("outputs/index.json").read_text(encoding="utf-8"))["revision"])')"
           cat > release-notes.md <<EOF
           Built from commit ${GITHUB_SHA}.
 
@@ -127,5 +128,5 @@ jobs:
             outputs/SHA256SUMS \
             --target "$GITHUB_SHA" \
             --latest \
-            --title "HYDCD Qiding build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --title "HYDCD Qiding build ${revision}" \
             --notes-file release-notes.md

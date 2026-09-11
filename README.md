@@ -29,7 +29,9 @@ be started manually from the Actions tab.
 
 Successful builds on `main` also publish a **GitHub Release** with
 `hydcd-qiding-yomitan.zip` for Yomitan, conversion and validation reports, the
-source commit, and a checksum file. Releases use the tag
+source commit, and a checksum file. Release titles use the full revision from
+the dictionary's `index.json`, matching the version shown in Yomitan (for
+example, `HYDCD Qiding build 2025.12.13.3.1`). Releases use the tag
 `build-<run ID>-<attempt>` and point to the exact commit that was built. Manual
 runs on `main` publish releases too; reruns create a new release without
 overwriting an earlier build. Release assets do not have the seven-day

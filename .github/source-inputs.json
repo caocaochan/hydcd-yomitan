@@ -1,0 +1,20 @@
+{
+  "release": "source-qiding-2025.12.13",
+  "files": [
+    {
+      "name": "hdc2025.mdx",
+      "size": 114796828,
+      "sha256": "750c281fa6d960255974fdfe5381f8241ebef8ef76a9a94c41144c43a1add9d6"
+    },
+    {
+      "name": "hdc2025.mdd",
+      "size": 158844554,
+      "sha256": "bffbfcb31925fe1890165e05ad585d26da44009b22ee8faa0dbb87e3e5c5f213"
+    },
+    {
+      "name": "hydcd.css",
+      "size": 12331,
+      "sha256": "3bf2cbeab32307962e45c9b725bb35ef95ab4ccb89452fa8f32cf0b26ad24a4d"
+    }
+  ]
+}

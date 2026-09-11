@@ -1,0 +1,8 @@
+/.pytest_cache/
+/.venv/
+/build/
+/dist/
+/hydcd_yomitan/__pycache__/
+/tests/__pycache__/
+*.pyc
+*.db

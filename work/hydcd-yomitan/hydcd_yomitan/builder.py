@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
 import time
@@ -197,10 +198,16 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
         bank.close()
         conn.commit()
 
-        revision = f"2025.12.13-qiding+converter-{__version__}+{mdx_sha[:12]}"
+        revision = os.environ.get(
+            "HYDCD_RELEASE_REVISION",
+            f"2025.12.13-qiding+converter-{__version__}+{mdx_sha[:12]}",
+        )
         index = {
             "title": "汉语大词典 2025",
             "revision": revision,
+            "isUpdatable": True,
+            "indexUrl": "https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index.json",
+            "downloadUrl": "https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan.zip",
             "format": 3,
             "sequenced": True,
             "author": "Original lexicographers and FreeMdict community editors; private Yomitan conversion",
@@ -239,6 +246,12 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
             "warning_samples": stats.warning_samples,
             "error_samples": stats.error_samples,
             "corrections": stats.correction_log,
+            "reading_diagnostics": {
+                "counts": dict(sorted(stats.reading_counts.items())),
+                "samples": stats.reading_samples,
+                "sample_limit_per_reason": 25,
+                "count_unit": "source pronunciation block (before variants and redirects)",
+            },
             "performance": {"build_seconds": elapsed, "peak_rss_bytes": _max_rss_bytes()},
             "schema_source": str(schemas),
         }

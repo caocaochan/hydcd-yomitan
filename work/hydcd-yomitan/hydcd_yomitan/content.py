@@ -9,6 +9,7 @@ from urllib.parse import quote as urlquote
 from lxml import etree, html
 
 from .models import ConversionStats, ParsedEntry
+from .readings import extract_pronunciation, normalize_pinyin
 from .resources import ResourceCatalog
 
 
@@ -37,11 +38,6 @@ FORM_TAGS = {"simp", "simplified", "tradition"}
 
 def normalize_text(value: str) -> str:
     return unicodedata.normalize("NFC", value.replace("\x00", "")).strip()
-
-
-def normalize_pinyin(value: str) -> str:
-    """Convert typographic pinyin letters before composing tone marks."""
-    return normalize_text(value.replace("\u0261", "g").replace("\u0251", "a"))
 
 
 def redirect_target(raw: bytes | str) -> str | None:
@@ -282,7 +278,9 @@ def parse_record(
                 hw = hm.find(".//hw")
             expression = _text_without_sup(hw) or headword
             pron = hm.find(".//pron") if hm is not None else None
-            reading = normalize_pinyin("".join(pron.itertext())) if pron is not None else ""
+            pronunciation = extract_pronunciation(pron)
+            if pron is not None:
+                stats.record_reading(headword, pronunciation.original, pronunciation.readings, pronunciation.reasons)
             alternates: list[str] = []
             simplified_terms: list[str] = []
             traditional_terms: list[str] = []
@@ -315,15 +313,33 @@ def parse_record(
             if len(body_content) == 1:
                 body_content.append("（无可显示释义）")
                 stats.counters["empty_glossaries"] += 1
+            reading_metadata: list[Any] = []
+            if pronunciation.retain_source and pron is not None:
+                reading_metadata = ["原文读音：", converter.convert(pron)]
+                if pronunciation.unresolved_codepoints:
+                    reading_metadata.append("（未解析字符：" + ", ".join(pronunciation.unresolved_codepoints) + "）")
+            elif pronunciation.notes:
+                reading_metadata = ["读音附注："]
+                for index, note in enumerate(pronunciation.notes):
+                    if index:
+                        reading_metadata.append("；")
+                    _append(reading_metadata, converter.convert(note))
+            if reading_metadata:
+                metadata = _container("div", reading_metadata, "reading-metadata")
+                if header_content:
+                    header_content.append(metadata)
+                else:
+                    body_content.insert(1, _container("div", [metadata], "header"))
             glossary = [{
                 "type": "structured-content",
                 "content": _container("span", body_content, "hydcd-entry", lang="zh-Hans"),
             }]
-            if not reading:
+            if pronunciation.readings == [""]:
                 stats.counters["missing_readings"] += 1
                 stats.sample(stats.missing_reading_samples, expression)
-            _pua_scan([expression, reading, "".join(hdc.itertext())], expression, stats)
-            parsed.append(ParsedEntry(expression, reading, glossary, alternates))
+            _pua_scan([expression, "".join(hdc.itertext())], expression, stats)
+            for reading in pronunciation.readings:
+                parsed.append(ParsedEntry(expression, reading, glossary, alternates))
     else:
         content: list[Any] = []
         for child in root:

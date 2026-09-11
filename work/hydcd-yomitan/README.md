@@ -37,10 +37,27 @@ dictionary files are not licensed or distributed by this converter.
 ## Conversion policy
 
 - Unicode is normalized with NFC, never NFKC.
-- Pinyin readings replace `ɡ` (U+0261) with ASCII `g` and `ɑ` (U+0251)
-  with ASCII `a` before NFC composition of tone marks. Canonical entries,
-  variants, and redirects share these normalized readings; definitions and
-  Chinese expressions are unchanged.
+- Pinyin readings replace `ɡ` (U+0261), `ɑ` (U+0251), `ｅ` (U+FF45), and
+  `ｋ` (U+FF4B) with ASCII `g`, `a`, `e`, and `k`, respectively, and U+2003
+  with ordinary space before NFC composition. Tone marks, `ü`, `ê`, syllabic
+  nasals, capitalization, internal ASCII spacing, and phrase punctuation remain.
+- Nested pronunciation notes are displayed once in the definition header,
+  including notes without parentheses; they never supply lookup alternatives.
+  Only a comma directly separating a pronunciation from a note is removed.
+- Bracketed pronunciation records supply pinyin from their first bracket,
+  excluding Bopomofo and historical phonology. The original record remains in
+  the header. Explicit slash alternatives produce separate entries in source
+  order, with duplicate readings removed.
+- Unresolved primary pronunciations (question marks, private-use characters,
+  or unrecognized metadata) yield empty readings and retain the complete source
+  pronunciation in the header. Private-use code points are identified visibly.
+  Mixed slash lists retain valid alternatives and report unresolved ones.
+- Canonical entries, variants, and redirects share the resulting single-valued
+  readings. Extraction and archive validation use the same character checks;
+  these check character hygiene, not linguistic correctness of each syllable.
+  Reports count source pronunciation blocks separately from emitted rows and
+  retain at most 25 examples per reason. See the versioned
+  [reading audit](../../docs/reading-character-audit.md).
 - Existing simplified/traditional records and redirects are preserved; OpenCC
   aliases are not invented.
 - `@@@LINK=` aliases receive the canonical definition directly.

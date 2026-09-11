@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
 from jsonschema import Draft7Validator
+
+from .readings import is_clean_reading
 
 
 REMOTE_RE = re.compile(r"^(?:https?:)?//", re.I)
@@ -105,7 +106,7 @@ def validate_dictionary(
                 if not isinstance(reading, str):
                     if len(errors) < 1000:
                         errors.append(f"{bank_name}[{term_index}] reading is not a string")
-                elif any(char in reading for char in "ɡɑ") or not unicodedata.is_normalized("NFC", reading):
+                elif not is_clean_reading(reading):
                     if len(errors) < 1000:
                         errors.append(f"{bank_name}[{term_index}] reading is not normalized pinyin")
                 glossary = term[5]

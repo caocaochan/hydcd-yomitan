@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,16 @@ class ConversionStats:
     error_samples: list[str] = field(default_factory=list)
     correction_log: list[dict[str, Any]] = field(default_factory=list)
     resource_extensions: Counter[str] = field(default_factory=Counter)
+    reading_counts: Counter[str] = field(default_factory=Counter)
+    reading_samples: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+
+    def record_reading(self, headword: str, original: str, readings: list[str], reasons: Iterable[str]) -> None:
+        self.counters["source_pronunciation_blocks"] += 1
+        for reason in dict.fromkeys(reasons):
+            self.reading_counts[reason] += 1
+            samples = self.reading_samples.setdefault(reason, [])
+            if len(samples) < 25:
+                samples.append({"headword": headword, "original": original, "readings": readings})
 
     def sample(self, target: list[str], value: str, limit: int = 100) -> None:
         if value not in target and len(target) < limit:

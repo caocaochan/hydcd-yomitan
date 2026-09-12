@@ -11,7 +11,7 @@ pinyin readings for matching and tone coloring in Yomitan/Lapis.
 - [Yomitan update index](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index.json)
 - [Light update index](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index-light.json)
 
-**汉语大词典 2025 Light** removes all images and complete example blocks,
+**汉语大词典 2025 Light** removes all images, their captions, and complete example blocks,
 including their citations and notes. Definitions, readings, historical phonology,
 explanatory notes outside examples, lookup aliases, and the full edition's CSS
 are preserved. Quotations and source details within definitions remain.
@@ -24,9 +24,9 @@ Measured with converter 1.0.5 and the pinned source inputs (decimal MB):
 | Edition | ZIP download | Uncompressed archive contents |
 | --- | ---: | ---: |
 | Full | 367.79 MB | 2,000.62 MB |
-| Light | 50.85 MB | 723.88 MB |
+| Light | 50.75 MB | 723.31 MB |
 
-Light reduces the ZIP size by **86.17%**. Both editions retain **936,906 term
+Light reduces the ZIP size by **86.20%**. Both editions retain **936,906 term
 rows**; release preparation checks every non-glossary row field and its
 multiplicity, along with identical CSS and source input hashes.
 

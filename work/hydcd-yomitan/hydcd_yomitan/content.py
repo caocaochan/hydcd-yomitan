@@ -178,7 +178,14 @@ def _sense_numbers(value: Any) -> list[Any]:
     return []
 
 
-def _omitted_content_id(hdc: etree._Element) -> str:
+def _light_removed_kind(el: etree._Element, image_containers: frozenset[etree._Element]) -> str:
+    if el in image_containers:
+        return "image_container"
+    tag = el.tag.casefold() if isinstance(el.tag, str) else ""
+    return tag if tag in LIGHT_REMOVED_TAGS else ""
+
+
+def _omitted_content_id(hdc: etree._Element, image_containers: frozenset[etree._Element]) -> str:
     """Fingerprint omitted source blocks without converting or resolving them.
 
     Used only for multi-definition source records. Together with the retained
@@ -188,7 +195,9 @@ def _omitted_content_id(hdc: etree._Element) -> str:
     digest = hashlib.sha256()
     found = False
     for node in hdc.iter():
-        if node.tag not in LIGHT_REMOVED_TAGS or any(a.tag in LIGHT_REMOVED_TAGS for a in node.iterancestors()):
+        if not _light_removed_kind(node, image_containers) or any(
+            _light_removed_kind(a, image_containers) for a in node.iterancestors()
+        ):
             continue
         encoded = etree.tostring(node, with_tail=False)
         digest.update(len(encoded).to_bytes(8, "big"))
@@ -198,23 +207,27 @@ def _omitted_content_id(hdc: etree._Element) -> str:
 
 
 class StructuredConverter:
-    def __init__(self, resources: ResourceCatalog | None, stats: ConversionStats, *, edition: str = "full"):
+    def __init__(
+        self, resources: ResourceCatalog | None, stats: ConversionStats, *, edition: str = "full",
+        image_containers: frozenset[etree._Element] = frozenset(),
+    ):
         get_edition(edition)
         self.resources = resources
         self.stats = stats
         self.edition = edition
+        self.image_containers = image_containers
         self.removed_nodes = 0
 
     def convert(self, el: etree._Element) -> Any:
         tag = str(el.tag).casefold() if isinstance(el.tag, str) else ""
         if not tag:
             return ""
-        if self.edition == "light" and tag in LIGHT_REMOVED_TAGS:
+        if self.edition == "light" and _light_removed_kind(el, self.image_containers):
             # Count every removed source element, including images inside examples,
             # without converting descendants or attempting resource resolution.
             for node in el.iter():
-                if isinstance(node.tag, str) and node.tag.casefold() in LIGHT_REMOVED_TAGS:
-                    self.stats.counters[f"light_removed_{node.tag.casefold()}"] += 1
+                if kind := _light_removed_kind(node, self.image_containers):
+                    self.stats.counters[f"light_removed_{kind}"] += 1
                     self.removed_nodes += 1
             return ""
         removed_before = self.removed_nodes
@@ -364,13 +377,18 @@ def parse_record(
         stats.warning(f"Malformed HTML for {headword}: {exc}")
         text = normalize_text(re.sub(r"<[^>]+>", "", raw))
         return [ParsedEntry(headword, "", [{"type": "text", "text": text}])]
+    # Keep element identities before sanitization strips source classes. Captions
+    # are siblings of images inside these wrappers, so removing img alone leaks them.
+    image_containers = frozenset(
+        el for el in root.iter() if "imgContainer" in el.get("class", "").split()
+    ) if edition == "light" else frozenset()
     _remove_forbidden(root)
-    converter = StructuredConverter(resources, stats, edition=edition)
+    converter = StructuredConverter(resources, stats, edition=edition, image_containers=image_containers)
     hdc_nodes = root.xpath(".//hdc")
     parsed: list[ParsedEntry] = []
     if hdc_nodes:
         for hdc in hdc_nodes:
-            omitted_content_id = _omitted_content_id(hdc) if edition == "light" and len(hdc_nodes) > 1 else ""
+            omitted_content_id = _omitted_content_id(hdc, image_containers) if edition == "light" and len(hdc_nodes) > 1 else ""
             hm = hdc.find("hm")
             hw = hm.find(".//div[@class='hw']") if hm is not None else None
             if hw is None and hm is not None:

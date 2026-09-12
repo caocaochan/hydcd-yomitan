@@ -13,6 +13,7 @@ from hydcd_yomitan.content import parse_record
 from hydcd_yomitan.editions import EDITIONS, LIGHT_OMISSION, UPDATE_BASE
 from hydcd_yomitan.models import ConversionStats, InputSet
 from hydcd_yomitan.package import deterministic_zip
+from hydcd_yomitan.resources import ResourceCatalog
 from hydcd_yomitan.validation import validate_dictionary
 from test_content import flatten, form_badges, nodes_with_kind
 
@@ -46,12 +47,67 @@ def test_light_removes_subtrees_and_preserves_surrounding_definition_text():
     assert stats.counters["light_removed_empty_containers"] == 2
 
 
+def test_light_removes_hu_image_caption_and_full_preserves_it(tmp_path):
+    raw = '''<hdcs class="xml" book="140"><hdc><hm><div class="hw">琥</div><pron>hǔ</pron>
+    <yinyun><book>《广韵》</book>呼古切，上姥，曉。</yinyun></hm>
+    <item><mean><xh>1</xh>雕成虎形的玉器。</mean>
+    <examples><example><book>《左传·昭公三二年》</book>：<quote>賜<u>子家子</u>雙琥。</quote>
+    <note><u>孔颖达</u>疏：<quote>蓋刻玉爲虎形也。</quote></note></example></examples>
+    <div class="imgContainer"><img src="142.jpg"><div>琥（殷墟妇好墓）</div></div></item>
+    <item><mean><xh>2</xh><see>见“<a href="entry://琥珀">琥珀</a>”。</see></mean></item></hdc></hdcs>'''
+    stats = ConversionStats()
+    light = parse_record("琥", raw, None, stats, edition="light")[0]
+    resources = ResourceCatalog(tmp_path, ConversionStats(), source_to_output={"142.jpg": "media/142.jpg"})
+    full = parse_record("琥", raw, resources, ConversionStats())[0]
+    assert light.expression == full.expression == "琥"
+    assert light.reading == full.reading == "hǔ"
+    assert "琥（殷墟妇好墓）" not in flatten(light.glossary)
+    assert "琥（殷墟妇好墓）" in flatten(full.glossary)
+    assert nodes_with_kind(full.glossary, "entry-image")[0]["path"] == "media/142.jpg"
+    assert not nodes_with_kind(light.glossary, "entry-image")
+    assert not nodes_with_kind(light.glossary, "examples")
+    for kind in ["phonology", "sense", "sense-number"]:
+        assert nodes_with_kind(light.glossary, kind) == nodes_with_kind(full.glossary, kind)
+    assert "雕成虎形的玉器。" in flatten(light.glossary)
+    assert "?query=%E7%90%A5%E7%8F%80" in json.dumps(light.glossary)
+    assert LIGHT_OMISSION not in flatten(light.glossary)
+    assert stats.counters["light_removed_image_container"] == 1
+    assert stats.counters["light_removed_img"] == 1
+
+
+@pytest.mark.parametrize("wrapper", ["{}", "<hdc><hm><hw>字</hw></hm>{}</hdc>"])
+def test_light_caption_wrappers_preserve_tails_and_unmarked_text(wrapper):
+    raw = '''前<div class="other imgContainer selected"><img src="missing.png">
+    <div>删除图注<em>删除嵌套说明</em><a href="entry://词">删除链接</a></div></div>后
+    <div class="imgContainerExtra">保留普通文字<img src="inline.png">保留图后文字</div>'''
+    stats = ConversionStats()
+    entry = parse(wrapper.format(raw), stats)
+    text = flatten(entry.glossary)
+    assert "前后" in text
+    assert "保留普通文字保留图后文字" in text
+    assert "删除" not in text
+    assert LIGHT_OMISSION not in text
+    assert stats.counters["light_removed_image_container"] == 1
+    assert stats.counters["light_removed_img"] == 2
+
+
+def test_light_counts_wrappers_nested_in_removed_examples():
+    stats = ConversionStats()
+    entry = parse('''<mean>释义</mean><examples><example><div class="imgContainer">
+    <img src="missing.png"><div>删除图注</div></div></example></examples>''', stats)
+    assert "删除" not in flatten(entry.glossary)
+    for kind in ["examples", "example", "image_container", "img"]:
+        assert stats.counters[f"light_removed_{kind}"] == 1
+
+
 @pytest.mark.parametrize("body", [
     '<mean><xh>2</xh><img src="missing.png"></mean>',
     '<submean><sensenum>2</sensenum><examples><example>删除</example></examples></submean>',
     '<item><examples><example>删除</example></examples></item>',
     '<div><img src="missing.png"></div>',
     '<mean><span><xh>2</xh><img src="missing.png"></span>。</mean>',
+    '<mean><xh>2</xh><div class="imgContainer"><img src="missing.png"><div>删除图注</div></div></mean>',
+    '<div class="imgContainer"><img src="missing.png"><div>删除图注</div></div>',
 ])
 def test_light_empty_senses_and_entries_get_one_notice(body):
     entry = parse(f'<hdc><hm><hw>字</hw><pron>zì</pron><yinyun>古音</yinyun></hm>{body}</hdc>')
@@ -217,9 +273,13 @@ def test_release_preparation_requires_identical_source_hashes(tmp_path, monkeypa
         release_module().prepare(tmp_path)
 
 
-def test_light_preserves_definitions_that_only_differ_in_examples_and_deduplicates_true_copies(tmp_path, monkeypatch):
-    def definition(number, example):
-        return f'<hdc><hm><hw>詞<sup>{number}</sup></hw><simp>词</simp><pron>cí</pron></hm><item><mean>释义。</mean><examples><example>{example}</example></examples></item></hdc>'
+@pytest.mark.parametrize("omitted", [
+    '<examples><example>{}</example></examples>',
+    '<div class="imgContainer"><img src="https://example.invalid/image.jpg"><div>{}</div></div>',
+])
+def test_light_preserves_definitions_that_only_differ_in_omitted_content_and_deduplicates_true_copies(tmp_path, monkeypatch, omitted):
+    def definition(number, text):
+        return f'<hdc><hm><hw>詞<sup>{number}</sup></hw><simp>词</simp><pron>cí</pron></hm><item><mean>释义。</mean>{omitted.format(text)}</item></hdc>'
 
     raw = (definition(1, "甲") + definition(2, "乙") + definition(3, "乙")).encode()
     records = [(1, "詞", raw), (2, "別", "@@@LINK=詞".encode()), (3, "别", "@@@LINK=別".encode()),

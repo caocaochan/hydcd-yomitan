@@ -44,7 +44,7 @@ edition if installed. Subsequent updates stay within the installed edition.
 
 Light uses the same input inventory/checksums but skips MDD extraction and image
 processing. Its report records source-element removal counts (including nested
-images and examples), empty-container removals, and omission notices, before
+image containers, images, and examples), empty-container removals, and omission notices, before
 variant/redirect duplication. Complete builds use the same release revision.
 
 ## Conversion policy
@@ -76,7 +76,7 @@ variant/redirect duplication. Complete builds use the same release revision.
 - `@@@LINK=` aliases receive the canonical definition directly.
 - Full: examples are retained in native `<details>` blocks, collapsed by default;
   only referenced local images are packaged.
-- Light: images, example blocks, standalone examples, and example notes are
+- Light: images and their caption containers, example blocks, standalone examples, and example notes are
   removed before their descendants are converted or resources resolved.
   Empty containers caused by these cuts are removed; otherwise-empty senses and
   entries retain their numbering and display `（精简版已省略图片或例证）`.

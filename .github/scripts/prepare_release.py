@@ -80,7 +80,7 @@ def prepare(output: Path) -> dict:
     for edition, info in sizes.items():
         notes.append(f"- **{edition.title()}**: `{info['archive']}` — {info['compressed_bytes'] / 1_000_000:.2f} MB download; {info['uncompressed_bytes'] / 1_000_000:.2f} MB uncompressed archive contents.")
     notes.extend([
-        "", f"Light is {reduction:.1%} smaller. It removes all images and complete example blocks, including their citations and notes.",
+        "", f"Light is {reduction:.1%} smaller. It removes all images, their captions, and complete example blocks, including their citations and notes.",
         "Definitions, readings, historical phonology, other explanatory notes, lookup aliases, and styling are preserved.",
         "Image/example-only senses display a short omission notice. Quotations and source details within definitions remain.",
         "", "Each edition updates independently. To switch editions, import the chosen ZIP and disable or remove the other edition if installed.",

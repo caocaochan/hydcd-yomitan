@@ -16,6 +16,7 @@ import psutil
 from . import __version__
 from .content import is_navigation_record, is_navigation_redirect, parse_record, redirect_target
 from .corrections import apply_corrections, load_corrections
+from .editions import UPDATE_BASE, get_edition
 from .models import ConversionStats, InputSet, ParsedEntry
 from .package import TermBankWriter, deterministic_zip, write_json
 from .resources import ResourceCatalog
@@ -51,8 +52,13 @@ def _record_signature(entry: list[Any]) -> bytes:
     return hashlib.sha256(encoded).digest()
 
 
-def _emit(bank: TermBankWriter, conn: sqlite3.Connection, entry: list[Any], stats: ConversionStats) -> bool:
+def _emit(
+    bank: TermBankWriter, conn: sqlite3.Connection, entry: list[Any], stats: ConversionStats,
+    omitted_content_id: str = "",
+) -> bool:
     signature = _record_signature(entry)
+    if omitted_content_id:
+        signature = hashlib.sha256(signature + omitted_content_id.encode("ascii")).digest()
     inserted = conn.execute("INSERT OR IGNORE INTO dedupe(signature) VALUES (?)", (signature,)).rowcount
     if not inserted:
         stats.counters["deduplicated_terms"] += 1
@@ -68,7 +74,8 @@ def _term_row(expression: str, reading: str, glossary: list[Any], sequence: int,
 
 def _payload(parsed: list[ParsedEntry]) -> bytes:
     data = [
-        {"expression": p.expression, "reading": p.reading, "glossary": p.glossary, "alternate_terms": p.alternate_terms}
+        {"expression": p.expression, "reading": p.reading, "glossary": p.glossary, "alternate_terms": p.alternate_terms,
+         "omitted_content_id": p.omitted_content_id}
         for p in parsed
     ]
     return zlib.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), level=9)
@@ -104,19 +111,22 @@ def _max_rss_bytes() -> int:
     return int(getattr(memory, "peak_wset", memory.rss))
 
 
-def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_path: Path) -> tuple[dict, Path]:
+def build_dictionary(
+    inputs: InputSet, output: Path, schemas: Path, corrections_path: Path, *, edition: str = "full",
+) -> tuple[dict, Path]:
+    identity = get_edition(edition)
     started = time.perf_counter()
     inventory = input_inventory(inputs)
     mdx_sha = next(item["sha256"] for item in inventory["files"] if item["name"] == inputs.mdx.name)
     stats = ConversionStats()
     corrections = load_corrections(corrections_path)
     output = output.resolve()
-    report_path = output.with_name("hydcd-qiding-conversion-report.json")
+    report_path = output.with_name(identity.report)
     with tempfile.TemporaryDirectory(prefix="hydcd-yomitan-") as temporary:
         temp = Path(temporary)
         stage = temp / "dictionary"
         stage.mkdir()
-        resources = ResourceCatalog.build(inputs.mdds, temp / "resources", stats)
+        resources = ResourceCatalog.build(inputs.mdds, temp / "resources", stats) if edition == "full" else None
         conn = _connect(temp / "index.db")
         batch: list[tuple[int, str, bytes | None, str | None, str | None]] = []
         for ordinal, headword, raw_bytes in iter_mdx_records(inputs.mdx):
@@ -156,14 +166,14 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
         cursor = conn.execute("SELECT id, headword, raw FROM source_entries WHERE raw IS NOT NULL ORDER BY id")
         for source_id, headword, compressed in cursor:
             raw = zlib.decompress(compressed).decode("utf-8")
-            parsed = parse_record(headword, raw, resources, stats)
+            parsed = parse_record(headword, raw, resources, stats, edition=edition)
             conn.execute("INSERT INTO rendered VALUES (?,?)", (source_id, _payload(parsed)))
             for item in parsed:
-                _emit(bank, conn, _term_row(item.expression, item.reading, item.glossary, source_id), stats)
+                _emit(bank, conn, _term_row(item.expression, item.reading, item.glossary, source_id), stats, item.omitted_content_id)
                 for alternate in item.alternate_terms:
                     exists = conn.execute("SELECT 1 FROM source_entries WHERE headword=? LIMIT 1", (alternate,)).fetchone()
                     if not exists:
-                        _emit(bank, conn, _term_row(alternate, item.reading, item.glossary, source_id, "variant"), stats)
+                        _emit(bank, conn, _term_row(alternate, item.reading, item.glossary, source_id, "variant"), stats, item.omitted_content_id)
                         stats.counters["generated_source_variants"] += 1
             if source_id % 2048 == 0:
                 conn.commit()
@@ -191,7 +201,7 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
                     _emit(
                         bank, conn,
                         _term_row(alias, rendered["reading"], rendered["glossary"], canonical_id, "redirect"),
-                        stats,
+                        stats, rendered["omitted_content_id"],
                     )
             if source_id % 4096 == 0:
                 conn.commit()
@@ -203,11 +213,11 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
             f"2025.12.13-qiding+converter-{__version__}+{mdx_sha[:12]}",
         )
         index = {
-            "title": "汉语大词典 2025",
+            "title": identity.title,
             "revision": revision,
             "isUpdatable": True,
-            "indexUrl": "https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index.json",
-            "downloadUrl": "https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan.zip",
+            "indexUrl": UPDATE_BASE + identity.index,
+            "downloadUrl": UPDATE_BASE + identity.archive,
             "format": 3,
             "sequenced": True,
             "author": "Original lexicographers and FreeMdict community editors; private Yomitan conversion",
@@ -217,6 +227,12 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
             "sourceLanguage": "zh",
             "targetLanguage": "zh",
         }
+        if edition == "light":
+            index["description"] = (
+                "Light structured-content conversion. Images and complete example blocks, including their "
+                "citations and notes, are removed. Definitions, pinyin, historical phonology, other notes, "
+                "source labels, dual-script redirects, and styling are preserved."
+            )
         write_json(stage / "index.json", index)
         styles = (Path(__file__).parent / "data" / "styles.css").read_bytes()
         (stage / "styles.css").write_bytes(styles)
@@ -224,11 +240,13 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
         package_files: list[tuple[str, Path | bytes]] = []
         for file in stage.iterdir():
             package_files.append((file.name, file))
-        for resource in sorted(resources.used_outputs):
-            package_files.append((resource, resources.output_to_file[resource]))
+        if resources is not None:
+            for resource in sorted(resources.used_outputs):
+                package_files.append((resource, resources.output_to_file[resource]))
         output_sha = deterministic_zip(output, package_files)
         elapsed = time.perf_counter() - started
         report = {
+            "edition": edition,
             "converter_version": __version__,
             "dictionary_revision": revision,
             "input": inventory,
@@ -240,7 +258,7 @@ def build_dictionary(inputs: InputSet, output: Path, schemas: Path, corrections_
             "exclusions": dict(sorted(stats.exclusions.items())),
             "unknown_tags": dict(stats.unknown_tags.most_common()),
             "resource_extensions": dict(sorted(stats.resource_extensions.items())),
-            "used_resources": len(resources.used_outputs),
+            "used_resources": len(resources.used_outputs) if resources is not None else 0,
             "missing_reading_samples": stats.missing_reading_samples,
             "unresolved_pua_samples": stats.unresolved_pua_samples,
             "warning_samples": stats.warning_samples,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydcd-yomitan"
-version = "1.0.4"
+version = "1.0.5"
 description = "Private converter for the Hanyu Da Cidian Qiding MDict fork"
 requires-python = ">=3.12"
 dependencies = [

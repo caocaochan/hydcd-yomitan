@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PYTHONUNBUFFERED: '1'
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -53,22 +53,21 @@ jobs:
         working-directory: work/hydcd-yomitan
         run: python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan.zip --archive-only --report ../../outputs/validation-report.txt
 
-      - name: Extract update index and record build provenance and checksum
-        run: |
-          python - <<'PY'
-          import hashlib, json, os, zipfile
-          from pathlib import Path
-          output = Path('outputs')
-          path = output / 'hydcd-qiding-yomitan.zip'
-          with zipfile.ZipFile(path) as archive:
-              (output / 'index.json').write_bytes(archive.read('index.json'))
-          with path.open('rb') as stream:
-              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-          (output / 'SHA256SUMS').write_text(f'{digest}  {path.name}\n', encoding='utf-8')
-          info = {key: os.environ[key] for key in ('GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
-          info['validation_mode'] = 'archive-only'
-          (output / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
-          PY
+      - name: Build Light dictionary
+        timeout-minutes: 15
+        working-directory: work/hydcd-yomitan
+        env:
+          HYDCD_RELEASE_REVISION: 2025.12.13.${{ github.run_number }}.${{ github.run_attempt }}
+        run: python -m hydcd_yomitan build --input ../input/hydcd-seven --edition light --output ../../outputs/hydcd-qiding-yomitan-light.zip
+
+      - name: Validate every Light bank and enforce content removals
+        timeout-minutes: 10
+        working-directory: work/hydcd-yomitan
+        run: python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan-light.zip --edition light --archive-only --report ../../outputs/validation-light-report.txt
+
+      - name: Compare editions and prepare update indexes, sizes, provenance, and checksums
+        timeout-minutes: 10
+        run: python .github/scripts/prepare_release.py
 
       - name: Upload dictionary and reports
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -79,6 +78,12 @@ jobs:
             outputs/index.json
             outputs/hydcd-qiding-conversion-report.json
             outputs/validation-report.txt
+            outputs/hydcd-qiding-yomitan-light.zip
+            outputs/index-light.json
+            outputs/hydcd-qiding-light-conversion-report.json
+            outputs/validation-light-report.txt
+            outputs/edition-comparison.json
+            outputs/release-notes.md
             outputs/build-info.json
             outputs/SHA256SUMS
           if-no-files-found: error
@@ -110,23 +115,19 @@ jobs:
         run: |
           tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           revision="$(python -c 'import json; from pathlib import Path; print(json.loads(Path("outputs/index.json").read_text(encoding="utf-8"))["revision"])')"
-          cat > release-notes.md <<EOF
-          Built from commit ${GITHUB_SHA}.
-
-          Download hydcd-qiding-yomitan.zip and import it into Yomitan/Lapis.
-          Conversion and validation reports, build provenance, and SHA256SUMS are attached.
-          Validation covers every archive bank; recursive term-schema validation is skipped.
-
-          Build: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          EOF
           gh release create "$tag" \
             outputs/hydcd-qiding-yomitan.zip \
             outputs/index.json \
             outputs/hydcd-qiding-conversion-report.json \
             outputs/validation-report.txt \
+            outputs/hydcd-qiding-yomitan-light.zip \
+            outputs/index-light.json \
+            outputs/hydcd-qiding-light-conversion-report.json \
+            outputs/validation-light-report.txt \
+            outputs/edition-comparison.json \
             outputs/build-info.json \
             outputs/SHA256SUMS \
             --target "$GITHUB_SHA" \
             --latest \
             --title "HYDCD Qiding build ${revision}" \
-            --notes-file release-notes.md
+            --notes-file outputs/release-notes.md

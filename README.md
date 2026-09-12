@@ -5,13 +5,38 @@ pinyin readings for matching and tone coloring in Yomitan/Lapis.
 
 ## Download and updates
 
-- [Latest dictionary ZIP](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan.zip)
+- [Latest full dictionary ZIP](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan.zip)
+- [Latest Light dictionary ZIP](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/hydcd-qiding-yomitan-light.zip)
 - [Latest release](https://github.com/caocaochan/hydcd-yomitan/releases/latest)
 - [Yomitan update index](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index.json)
+- [Light update index](https://github.com/caocaochan/hydcd-yomitan/releases/latest/download/index-light.json)
+
+**汉语大词典 2025 Light** removes all images and complete example blocks,
+including their citations and notes. Definitions, readings, historical phonology,
+explanatory notes outside examples, lookup aliases, and the full edition's CSS
+are preserved. Quotations and source details within definitions remain.
+Image/example-only senses display a short omission notice.
+Each release includes measured download and uncompressed sizes in its notes and
+`edition-comparison.json`.
+
+Measured with converter 1.0.5 and the pinned source inputs (decimal MB):
+
+| Edition | ZIP download | Uncompressed archive contents |
+| --- | ---: | ---: |
+| Full | 367.79 MB | 2,000.62 MB |
+| Light | 50.85 MB | 723.88 MB |
+
+Light reduces the ZIP size by **86.17%**. Both editions retain **936,906 term
+rows**; release preparation checks every non-glossary row field and its
+multiplicity, along with identical CSS and source input hashes.
+
+The editions have separate names and update channels. To switch editions,
+import the chosen ZIP; disable or remove the other edition if installed.
 
 These links follow the latest published dictionary release. Each ZIP embeds
 `isUpdatable`, `indexUrl`, and `downloadUrl`, and the release attaches the exact
-`index.json` from that ZIP. In Yomitan's dictionary settings, check for updates
+`index.json` from that ZIP (`index-light.json` for the Light release asset).
+In Yomitan's dictionary settings, check for updates
 and apply the available update. An older installation without update metadata
 must be replaced manually once with an update-enabled ZIP.
 
@@ -24,11 +49,11 @@ has not changed. The converter version and source commit remain in the reports.
 Every push to any branch runs the **Build dictionary** GitHub Actions workflow.
 It tests the converter, downloads the fixed source inputs from this
 repository's `source-qiding-2025.12.13` release, verifies their SHA-256 checksums,
-builds the dictionary, and runs archive-wide validation. The workflow can also
+builds both editions, and runs archive-wide validation and lookup-row/CSS parity checks. The workflow can also
 be started manually from the Actions tab.
 
 Successful builds on `main` also publish a **GitHub Release** with
-`hydcd-qiding-yomitan.zip` for Yomitan, conversion and validation reports, the
+both dictionary ZIPs for Yomitan, separate conversion and validation reports, the
 source commit, and a checksum file. Release titles use the full revision from
 the dictionary's `index.json`, matching the version shown in Yomitan (for
 example, `HYDCD Qiding build 2025.12.13.3.1`). Releases use the tag
@@ -52,7 +77,9 @@ existing Python dependency lock file. It needs only the built-in `GITHUB_TOKEN`
 with `contents: read` for the build and `contents: write` for the separate release
 job; no personal access token or repository secrets are needed. The release job
 downloads the validated build artifact and verifies the ZIP checksum before
-publishing.
+publishing. Light validation additionally rejects packaged media and retained
+image/example nodes. Both editions must have identical non-glossary lookup rows,
+CSS, and revisions before release assets are prepared.
 
 ## Local build
 
@@ -65,6 +92,8 @@ python -m pip install -r requirements-lock.txt
 python -m pytest
 python -m hydcd_yomitan build --input ../input/hydcd-seven --output ../../outputs/hydcd-qiding-yomitan.zip
 python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan.zip --archive-only
+python -m hydcd_yomitan build --input ../input/hydcd-seven --edition light --output ../../outputs/hydcd-qiding-yomitan-light.zip
+python -m hydcd_yomitan validate ../../outputs/hydcd-qiding-yomitan-light.zip --edition light --archive-only
 ```
 
 See [converter documentation](work/hydcd-yomitan/README.md) for conversion policy

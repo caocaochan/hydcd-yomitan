@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from jsonschema import Draft7Validator
 
 from .readings import is_clean_reading
+from .editions import LIGHT_REMOVED_TAGS, UPDATE_BASE, get_edition
 
 
 REMOTE_RE = re.compile(r"^(?:https?:)?//", re.I)
@@ -38,7 +39,9 @@ def _bank_number(name: str) -> int:
 
 def validate_dictionary(
     path: Path, schemas: Path, *, exhaustive: bool = False, archive_only: bool = False,
+    edition: str = "full",
 ) -> dict:
+    identity = get_edition(edition)
     if exhaustive and archive_only:
         raise ValueError("exhaustive and archive_only are mutually exclusive")
     path = path.resolve()
@@ -70,6 +73,13 @@ def validate_dictionary(
             index = json.loads(archive.read("index.json"))
             validator = Draft7Validator(_load_schema(schemas, "dictionary-index-schema.json"))
             errors.extend(f"index.json {list(err.path)}: {err.message}" for err in validator.iter_errors(index))
+            if edition == "light":
+                for key, expected in {
+                    "title": identity.title, "indexUrl": UPDATE_BASE + identity.index,
+                    "downloadUrl": UPDATE_BASE + identity.archive, "isUpdatable": True,
+                }.items():
+                    if index.get(key) != expected:
+                        errors.append(f"Light index.json has incorrect {key}")
         term_validator = Draft7Validator(_load_schema(schemas, "dictionary-term-bank-v3-schema.json"))
         banks = sorted(
             (name for name in names if re.fullmatch(r"term_bank_\d+\.json", name)),
@@ -144,6 +154,12 @@ def validate_dictionary(
                                 errors.append(f"{location} contains a redundant nested lang attribute")
             for value in _walk(bank):
                 if isinstance(value, dict):
+                    if edition == "light" and (
+                        value.get("tag") in LIGHT_REMOVED_TAGS
+                        or value.get("data", {}).get("content") in LIGHT_REMOVED_TAGS | {"entry-image"}
+                    ):
+                        if len(errors) < 1000:
+                            errors.append(f"Light edition retains an image or example node in {bank_name}")
                     if value.get("tag") == "img" and isinstance(value.get("path"), str):
                         referenced_resources.add(value["path"])
                     href = value.get("href")
@@ -158,6 +174,11 @@ def validate_dictionary(
         unused_media = sorted(name for name in names if name.startswith("media/") and name not in referenced_resources)
         warnings.extend(f"Unused packaged resource: {name}" for name in unused_media[:100])
         packaged_media = sorted(name for name in names if name.startswith("media/"))
+        if edition == "light" and any(
+            name.startswith("media/") or Path(name).suffix.casefold() in MEDIA_EXTENSIONS | {".svg", ".bmp", ".tif", ".tiff"}
+            for name in names
+        ):
+            errors.append("Light edition contains packaged media")
         for name in packaged_media:
             if Path(name).suffix.casefold() not in MEDIA_EXTENSIONS:
                 errors.append(f"Unsupported packaged media type: {name}")
@@ -179,6 +200,7 @@ def validate_dictionary(
             if not css_uses_sans_serif:
                 errors.append("hydcd-entry does not use the generic sans-serif font")
     return {
+        "edition": edition,
         "path": str(path), "size": path.stat().st_size, "sha256": digest,
         "valid": not errors, "term_banks": bank_count, "terms": term_count,
         "validation_mode": "archive-only" if archive_only else "exhaustive" if exhaustive else "targeted",
@@ -194,6 +216,7 @@ def validate_dictionary(
 def format_validation(result: dict) -> str:
     lines = [
         f"Dictionary: {result['path']}",
+        f"Edition: {result['edition']}",
         f"SHA-256: {result['sha256']}",
         f"Size: {result['size']} bytes",
         f"Mode: {result['validation_mode']}",

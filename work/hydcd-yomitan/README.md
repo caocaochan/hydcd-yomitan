@@ -17,6 +17,8 @@ python -m pip install -r requirements-lock.txt
 python -m hydcd_yomitan inspect --input ..\input\hydcd-seven
 python -m hydcd_yomitan build --input ..\input\hydcd-seven --output ..\..\outputs\hydcd-qiding-yomitan.zip
 python -m hydcd_yomitan validate ..\..\outputs\hydcd-qiding-yomitan.zip
+python -m hydcd_yomitan build --input ..\input\hydcd-seven --edition light --output ..\..\outputs\hydcd-qiding-yomitan-light.zip
+python -m hydcd_yomitan validate ..\..\outputs\hydcd-qiding-yomitan-light.zip --edition light --archive-only
 python -m pytest
 ```
 
@@ -33,6 +35,17 @@ available for manual use.
 
 `build` writes a conversion report next to the ZIP. Source data and generated
 dictionary files are not licensed or distributed by this converter.
+
+`--edition full` is the default for build and validation. Light has a separate
+title, ZIP, update endpoint, and `hydcd-qiding-light-conversion-report.json`.
+Its internal `index.json` is attached to releases as `index-light.json`.
+Switch editions by importing the chosen ZIP and disabling/removing the other
+edition if installed. Subsequent updates stay within the installed edition.
+
+Light uses the same input inventory/checksums but skips MDD extraction and image
+processing. Its report records source-element removal counts (including nested
+images and examples), empty-container removals, and omission notices, before
+variant/redirect duplication. Complete builds use the same release revision.
 
 ## Conversion policy
 
@@ -61,8 +74,14 @@ dictionary files are not licensed or distributed by this converter.
 - Existing simplified/traditional records and redirects are preserved; OpenCC
   aliases are not invented.
 - `@@@LINK=` aliases receive the canonical definition directly.
-- Examples are retained in native `<details>` blocks, collapsed by default.
-- Only referenced local images are packaged.
+- Full: examples are retained in native `<details>` blocks, collapsed by default;
+  only referenced local images are packaged.
+- Light: images, example blocks, standalone examples, and example notes are
+  removed before their descendants are converted or resources resolved.
+  Empty containers caused by these cuts are removed; otherwise-empty senses and
+  entries retain their numbering and display `（精简版已省略图片或例证）`.
+- Light retains historical phonology, other explanatory notes, quotations and
+  source details outside example blocks, all lookup forms, and identical CSS.
 - Unknown tags are unwrapped without losing their text and are reported.
 - Glossaries use `lang="zh-Hans"` and the browser's generic `sans-serif` font.
 - Corrections require an exact source hash and exact before-text match.

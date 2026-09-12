@@ -20,6 +20,8 @@ class ParsedEntry:
     reading: str
     glossary: list[dict[str, Any] | str]
     alternate_terms: list[str] = field(default_factory=list)
+    # Internal only: keep source distinctions erased by Light content removal.
+    omitted_content_id: str = ""
 
 
 @dataclass

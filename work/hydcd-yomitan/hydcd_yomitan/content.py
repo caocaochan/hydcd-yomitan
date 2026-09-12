@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 import unicodedata
 from copy import deepcopy
 from typing import Any, Iterable
@@ -9,6 +10,7 @@ from urllib.parse import quote as urlquote
 from lxml import etree, html
 
 from .models import ConversionStats, ParsedEntry
+from .editions import LIGHT_OMISSION, LIGHT_REMOVED_TAGS, get_edition
 from .readings import extract_pronunciation, normalize_pinyin
 from .resources import ResourceCatalog
 
@@ -126,16 +128,79 @@ def _form_row(
     )
 
 
+def _has_usable_content(value: Any) -> bool:
+    """Sense numbers and layout alone do not constitute a definition."""
+    if isinstance(value, str):
+        return any(unicodedata.category(char)[0] in {"L", "N", "S", "C"} and not char.isspace() for char in value)
+    if isinstance(value, list):
+        return any(_has_usable_content(item) for item in value)
+    if isinstance(value, dict):
+        if value.get("data", {}).get("content") == "sense-number":
+            return False
+        return _has_usable_content(value.get("content"))
+    return False
+
+
+def _sense_numbers(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return [node for item in value for node in _sense_numbers(item)]
+    if isinstance(value, dict):
+        if value.get("data", {}).get("content") == "sense-number":
+            return [value]
+        return _sense_numbers(value.get("content"))
+    return []
+
+
+def _omitted_content_id(hdc: etree._Element) -> str:
+    """Fingerprint omitted source blocks without converting or resolving them.
+
+    Used only for multi-definition source records. Together with the retained
+    glossary this distinguishes definitions that only differ in omitted content.
+    Ignored homograph superscripts in the header do not affect this identity.
+    """
+    digest = hashlib.sha256()
+    found = False
+    for node in hdc.iter():
+        if node.tag not in LIGHT_REMOVED_TAGS or any(a.tag in LIGHT_REMOVED_TAGS for a in node.iterancestors()):
+            continue
+        encoded = etree.tostring(node, with_tail=False)
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        found = True
+    return digest.hexdigest() if found else ""
+
+
 class StructuredConverter:
-    def __init__(self, resources: ResourceCatalog | None, stats: ConversionStats):
+    def __init__(self, resources: ResourceCatalog | None, stats: ConversionStats, *, edition: str = "full"):
+        get_edition(edition)
         self.resources = resources
         self.stats = stats
+        self.edition = edition
+        self.removed_nodes = 0
 
     def convert(self, el: etree._Element) -> Any:
         tag = str(el.tag).casefold() if isinstance(el.tag, str) else ""
         if not tag:
             return ""
+        if self.edition == "light" and tag in LIGHT_REMOVED_TAGS:
+            # Count every removed source element, including images inside examples,
+            # without converting descendants or attempting resource resolution.
+            for node in el.iter():
+                if isinstance(node.tag, str) and node.tag.casefold() in LIGHT_REMOVED_TAGS:
+                    self.stats.counters[f"light_removed_{node.tag.casefold()}"] += 1
+                    self.removed_nodes += 1
+            return ""
+        removed_before = self.removed_nodes
         content = _content(el, self)
+        if self.edition == "light" and self.removed_nodes > removed_before and not _has_usable_content(content):
+            if tag in {"mean", "submean", "item"}:
+                _append(content, LIGHT_OMISSION)
+                self.stats.counters["light_omission_notices"] += 1
+            else:
+                self.stats.counters["light_removed_empty_containers"] += 1
+                # Preserve numbering even when a source wrapper only enclosed
+                # a number plus the omitted image/example.
+                return _sense_numbers(content)
         if tag not in KNOWN:
             self.stats.unknown_tags[tag] += 1
             return content
@@ -258,20 +323,25 @@ def parse_record(
     raw: str,
     resources: ResourceCatalog | None,
     stats: ConversionStats,
+    *, edition: str = "full",
 ) -> list[ParsedEntry]:
+    get_edition(edition)
     raw = raw.replace("\x00", "")
     try:
         root = html.fragment_fromstring(raw, create_parent="div")
     except (etree.ParserError, ValueError) as exc:
+        if edition == "light":
+            raise ValueError(f"Cannot safely remove Light content from malformed HTML for {headword}") from exc
         stats.warning(f"Malformed HTML for {headword}: {exc}")
         text = normalize_text(re.sub(r"<[^>]+>", "", raw))
         return [ParsedEntry(headword, "", [{"type": "text", "text": text}])]
     _remove_forbidden(root)
-    converter = StructuredConverter(resources, stats)
+    converter = StructuredConverter(resources, stats, edition=edition)
     hdc_nodes = root.xpath(".//hdc")
     parsed: list[ParsedEntry] = []
     if hdc_nodes:
         for hdc in hdc_nodes:
+            omitted_content_id = _omitted_content_id(hdc) if edition == "light" and len(hdc_nodes) > 1 else ""
             hm = hdc.find("hm")
             hw = hm.find(".//div[@class='hw']") if hm is not None else None
             if hw is None and hm is not None:
@@ -306,10 +376,22 @@ def parse_record(
             ]
             if header_content:
                 body_content.append(_container("div", header_content, "header"))
+            body_start = len(body_content)
+            removed_before = converter.removed_nodes
+            if edition == "light" and hdc.text:
+                _append(body_content, hdc.text)
             for child in hdc:
                 if child is hm:
+                    if edition == "light" and child.tail:
+                        _append(body_content, child.tail)
                     continue
                 _append(body_content, converter.convert(child))
+                if edition == "light" and child.tail:
+                    _append(body_content, child.tail)
+            if (edition == "light" and converter.removed_nodes > removed_before
+                    and not _has_usable_content(body_content[body_start:])):
+                body_content.append(LIGHT_OMISSION)
+                stats.counters["light_omission_notices"] += 1
             if len(body_content) == 1:
                 body_content.append("（无可显示释义）")
                 stats.counters["empty_glossaries"] += 1
@@ -339,11 +421,17 @@ def parse_record(
                 stats.sample(stats.missing_reading_samples, expression)
             _pua_scan([expression, "".join(hdc.itertext())], expression, stats)
             for reading in pronunciation.readings:
-                parsed.append(ParsedEntry(expression, reading, glossary, alternates))
+                parsed.append(ParsedEntry(expression, reading, glossary, alternates, omitted_content_id))
     else:
         content: list[Any] = []
-        for child in root:
-            _append(content, converter.convert(child))
+        if edition == "light":
+            content = _content(root, converter)
+            if converter.removed_nodes and not _has_usable_content(content):
+                content = [LIGHT_OMISSION]
+                stats.counters["light_omission_notices"] += 1
+        else:
+            for child in root:
+                _append(content, converter.convert(child))
         if not content:
             text = normalize_text("".join(root.itertext()))
             content = [text or "（无可显示释义）"]

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .builder import build_dictionary
+from .editions import EDITIONS
 from .source import discover_input, input_inventory
 from .validation import format_validation, validate_dictionary
 
@@ -24,10 +25,12 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--output", type=Path, required=True)
     build.add_argument("--schemas", type=Path, default=DEFAULT_SCHEMAS)
     build.add_argument("--corrections", type=Path, default=DEFAULT_CORRECTIONS)
+    build.add_argument("--edition", choices=EDITIONS, default="full")
     validate = sub.add_parser("validate", help="Run targeted archive-wide validation")
     validate.add_argument("dictionary", type=Path)
     validate.add_argument("--schemas", type=Path, default=DEFAULT_SCHEMAS)
     validate.add_argument("--report", type=Path)
+    validate.add_argument("--edition", choices=EDITIONS, default="full")
     validation_mode = validate.add_mutually_exclusive_group()
     validation_mode.add_argument(
         "--exhaustive", action="store_true",
@@ -47,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "build":
         report, report_path = build_dictionary(
-            discover_input(args.input), args.output, args.schemas.resolve(), args.corrections.resolve()
+            discover_input(args.input), args.output, args.schemas.resolve(), args.corrections.resolve(),
+            edition=args.edition,
         )
         print(json.dumps({"output": report["output"], "report": str(report_path)}, ensure_ascii=False, indent=2))
         return 0
@@ -55,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         result = validate_dictionary(
             args.dictionary, args.schemas.resolve(),
             exhaustive=args.exhaustive, archive_only=args.archive_only,
+            edition=args.edition,
         )
         text = format_validation(result)
         if args.report:
